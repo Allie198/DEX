@@ -85,14 +85,14 @@ contract Pair {
         IERC20(tokenOut).transfer(msg.sender, amountOut);
 
         _sync();
-        emit Swap(msg.sedner, tokenIn, tokenOut, amountIn, amountOut);
+        emit Swap(msg.sender, tokenIn, tokenOut, amountIn, amountOut);
 
     }
 
 
     function _sync() internal {
-        reserve0 = uint112(IERC20(tokenA).balanceOf(address(this)));
-        reserve1 = uint112(IERC20(tokenB).balanceOf(address(this)));
+        reserveA = uint112(IERC20(tokenA).balanceOf(address(this)));
+        reserveB = uint112(IERC20(tokenB).balanceOf(address(this)));
     }
 
     function _min(uint256 a, uint256 b) internal pure returns (uint256) { 
