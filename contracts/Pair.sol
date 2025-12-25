@@ -10,6 +10,8 @@ contract Pair is ERC20 {
     address public immutable tokenA;
     address public immutable tokenB;
 
+    uint256 public constant MINIMUM_LIQUIDITY = 1000; 
+
     uint112 public reserveA;
     uint112 public reserveB;
 
@@ -26,22 +28,29 @@ contract Pair is ERC20 {
         return (reserveA, reserveB);
     }
 
-    function addLiquidity(uint256 amountAIn, uint256 amountBIn) external returns (uint256 lp) {
+    function addLiquidity(uint256 amountAIn, uint256 amountBIn) external returns (uint256 LP) {
         require(amountAIn > 0 && amountBIn > 0, "AMOUNTS");
 
         IERC20(tokenA).safeTransferFrom(msg.sender, address(this), amountAIn);
         IERC20(tokenB).safeTransferFrom(msg.sender, address(this), amountBIn);
 
         uint256 _totalSupply = totalSupply();
-        if (_totalSupply == 0) {
-            lp = _sqrt(amountAIn * amountBIn);
-        } else {
-            lp = _min((amountAIn * _totalSupply) / reserveA, (amountBIn * _totalSupply) / reserveB);
-        }
-        require(lp > 0, "LP0");
 
-        _mint(msg.sender, lp);
+        if (_totalSupply == 0) {
+            uint256 liquidity = _sqrt(amountAIn * amountBIn);
+            require(liquidity > MINIMUM_LIQUIDITY, "Liquidity must be greater than MINIMUM_LIQUDITY");
+
+            _mint(address(0), MINIMUM_LIQUIDITY);
+            LP = liquidity - MINIMUM_LIQUIDITY;
+
+        } else {
+            LP = _min((amountAIn * _totalSupply) / reserveA, (amountBIn * _totalSupply) / reserveB);
+            require(LP > 0, "Liquidity must be greater than zero");
+        }
+
+        _mint(msg.sender, LP);
         _sync();
+     
 
         emit AddLiquidity(msg.sender, amountAIn, amountBIn, lp);
     }
