@@ -1,92 +1,88 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
+import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
-contract Pair {
+contract Pair is ERC20 {
+    using SafeERC20 for IERC20;
+
     address public immutable tokenA;
     address public immutable tokenB;
 
     uint112 public reserveA;
     uint112 public reserveB;
 
-    mapping (address => uint256) public balanceOF;
-    uint256 public totalSupply;
-
     event AddLiquidity   (address indexed user, uint256 amountA, uint256 amountB,  uint256 LP);
     event RemoveLiquidity(address indexed user, uint256 amountA, uint256 amountB,  uint256 LP);
-    event Swap           (address indexed user, address tokenIn, address tokenOut, uint256 amountIn, uint256 amountOut);
+    event Swap           (address indexed user, address tokenIn, address tokenOut, uint256 amountIn, uint256 amountOut, address to);
 
-    constructor (address a, address b) {
+    constructor (address a, address b) ERC20("LP token", "LP"){
         require (a != b, "Both addresses are same");
         (tokenA, tokenB) = a < b ? (a, b) : (b, a);
     }
 
-    function getReserves() external view returns (uint112, uint112) {
+    function getReserves() public view returns (uint112, uint112) {
         return (reserveA, reserveB);
     }
 
-    function addLiquidity(uint256 amountA, uint256 amountB) external returns(uint256 LP) { 
-        require(amountA > 0 && amountB > 0, "Amounts must be greater than zero");
+    function addLiquidity(uint256 amountAIn, uint256 amountBIn) external returns (uint256 lp) {
+        require(amountAIn > 0 && amountBIn > 0, "AMOUNTS");
 
-        IERC20(tokenA).transferFrom(msg.sender, address(this), amountA);
-        IERC20(tokenB).transferFrom(msg.sender, address(this), amountB);
+        IERC20(tokenA).safeTransferFrom(msg.sender, address(this), amountAIn);
+        IERC20(tokenB).safeTransferFrom(msg.sender, address(this), amountBIn);
 
-        if (totalSupply == 0) {
-            LP = _sqrt(amountA * amountB);
+        uint256 _totalSupply = totalSupply();
+        if (_totalSupply == 0) {
+            lp = _sqrt(amountAIn * amountBIn);
         } else {
-            LP = _min((amountA * totalSupply) / reserveA, (amountB * totalSupply) / reserveB);
+            lp = _min((amountAIn * _totalSupply) / reserveA, (amountBIn * _totalSupply) / reserveB);
         }
+        require(lp > 0, "LP0");
 
-        require(LP > 0 , "LP cannot be 0");
-
-        balanceOF[msg.sender] += LP;
-        totalSupply += LP; 
-
+        _mint(msg.sender, lp);
         _sync();
 
-        emit AddLiquidity(msg.sender, amountA, amountB, LP);
+        emit AddLiquidity(msg.sender, amountAIn, amountBIn, lp);
     }
 
-    function removeLiquidity(uint256 LP) external returns (uint256 amountA, uint256 amountB) {
-        require(LP > 0, "LP cannot be 0");
-        require(balanceOF[msg.sender] >= LP, "Your must be greater than or equal to LP");
+      function removeLiquidity(uint256 lp) external returns (uint256 amountAOut, uint256 amountBOut) {
+        require(lp > 0, "LP0");
 
-        amountA = (LP * reserveA) / totalSupply;
-        amountB = (LP * reserveB) / totalSupply;
+        uint256 _totalSupply = totalSupply();
+        // LP token, Pair'in ERC20'si olduğu için user balance kontrolü ERC20 içinden gelir.
+        amountAOut = (lp * reserveA) / _totalSupply;
+        amountBOut = (lp * reserveB) / _totalSupply;
 
-        balanceOF[msg.sender] -= LP;
-        totalSupply -= LP; 
+        _burn(msg.sender, lp);
 
-        IERC20(tokenA).transfer(msg.sender, amountA);
-        IERC20(tokenB).transfer(msg.sender, amountB);
+        IERC20(tokenA).safeTransfer(msg.sender, amountAOut);
+        IERC20(tokenB).safeTransfer(msg.sender, amountBOut);
 
         _sync();
-
-        emit RemoveLiquidity(msg.sender, amountA, amountB, LP);
+        emit RemoveLiquidity(msg.sender, amountAOut, amountBOut, lp);
     }
+ 
+    function swap(address tokenIn, uint256 amountIn, uint256 minOut, address to) external returns (uint256 amountOut) {
+        require(tokenIn == tokenA || tokenIn == tokenB, "TOKEN");
+        require(amountIn > 0, "IN0");
+        require(to != address(0), "TO0");
 
-    function swap(address tokenIn, uint256 amountIn, uint256 minOut) external returns (uint256 amountOut) {
-        require(tokenIn == tokenA || tokenIn == tokenB, "Token");
-        require(amountIn > 0, "Amount cannot be 0");
-
-        bool isA = tokenA == tokenIn;
+        bool isA = (tokenIn == tokenA);
         address tokenOut = isA ? tokenB : tokenA;
-
         (uint256 rIn, uint256 rOut) = isA ? (reserveA, reserveB) : (reserveB, reserveA);
-        
-        IERC20(tokenIn).transferFrom(msg.sender, address(this), amountIn);
 
-        uint256 amountInWithFee = amountIn * 997; 
-        
+        IERC20(tokenIn).safeTransferFrom(msg.sender, address(this), amountIn);
+
+        uint256 amountInWithFee = amountIn * 997; // %0.3
         amountOut = (amountInWithFee * rOut) / (rIn * 1000 + amountInWithFee);
+
         require(amountOut >= minOut && amountOut > 0, "SLIPPAGE");
 
-        IERC20(tokenOut).transfer(msg.sender, amountOut);
+        IERC20(tokenOut).safeTransfer(to, amountOut);
 
         _sync();
-        emit Swap(msg.sender, tokenIn, tokenOut, amountIn, amountOut);
-
+        emit Swap(msg.sender, tokenIn, tokenOut, amountIn, amountOut, to);
     }
 
 
@@ -107,4 +103,4 @@ contract Pair {
         } else if (y != 0) z = 1;
     }
 }
-
+ 
