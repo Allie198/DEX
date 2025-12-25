@@ -15,6 +15,12 @@ contract Pair is ERC20 {
     uint112 public reserveA;
     uint112 public reserveB;
 
+    //Dynamic-Fee 
+    uint256 public constant FEE_DENOMINATOR = 10000;
+    uint256 public constant FEE_BPS_MIN = 10;
+    uint256 public constant FEE_BPS_BASE = 30;
+    uint256 public constant FEE_BPS_MAX = 100;
+
     event AddLiquidity   (address indexed user, uint256 amountA, uint256 amountB,  uint256 LP);
     event RemoveLiquidity(address indexed user, uint256 amountA, uint256 amountB,  uint256 LP);
     event Swap           (address indexed user, address tokenIn, address tokenOut, uint256 amountIn, uint256 amountOut, address to);
@@ -52,7 +58,7 @@ contract Pair is ERC20 {
         _sync();
      
 
-        emit AddLiquidity(msg.sender, amountAIn, amountBIn, lp);
+        emit AddLiquidity(msg.sender, amountAIn, amountBIn, LP);
     }
 
       function removeLiquidity(uint256 lp) external returns (uint256 amountAOut, uint256 amountBOut) {
@@ -83,8 +89,9 @@ contract Pair is ERC20 {
 
         IERC20(tokenIn).safeTransferFrom(msg.sender, address(this), amountIn);
 
-        uint256 amountInWithFee = amountIn * 997; // %0.3
-        amountOut = (amountInWithFee * rOut) / (rIn * 1000 + amountInWithFee);
+        uint256 feeBPS = _dynamicFeeBps(amountIn, rIn);
+        uint256 amountInWithFee = amountIn * (FEE_DENOMINATOR - feeBPS);
+        amountOut = (amountInWithFee * rOut) / (rIn * FEE_DENOMINATOR + amountIn);
 
         require(amountOut >= minOut && amountOut > 0, "SLIPPAGE");
 
@@ -94,6 +101,30 @@ contract Pair is ERC20 {
         emit Swap(msg.sender, tokenIn, tokenOut, amountIn, amountOut, to);
     }
 
+    function quoteAmountOut(address tokenIn, uint256 amountIn) external view returns (uint256 amountOut, uint256 feeBps) {
+        require(tokenIn == tokenA || tokenIn == tokenB, "Token not found");
+        require(amountIn > 0, "Amount must be greater than zero");
+
+        bool isA = (tokenIn == tokenA);
+        (uint256 reserveIn, uint256 reserveOut) = isA ? (reserveA, reserveB) : (reserveB, reserveA);
+        
+        require(reserveIn > 0 && reserveOut > 0, "Reserve must be greater than zero");
+        feeBps = _dynamicFeeBps(amountIn, reserveIn);
+
+        uint256 amountInWithFee = amountIn * (FEE_DENOMINATOR - feeBps);
+        amountOut = (amountInWithFee * reserveOut) / (reserveIn * FEE_DENOMINATOR + amountInWithFee);
+    }
+
+
+    function _dynamicFeeBps(uint256 amountIn, uint256 reserveIn) internal pure returns (uint256 feeBps) {
+        if (reserveIn  == 0) return FEE_BPS_MAX;
+        uint256 impactBps = (amountIn * FEE_DENOMINATOR) / (reserveIn + amountIn);
+        uint256 extra = impactBps / 25;
+        feeBps = FEE_BPS_BASE + extra;
+
+        if (feeBps < FEE_BPS_MIN) feeBps = FEE_BPS_MIN;
+        if (feeBps > FEE_BPS_MAX) feeBps = FEE_BPS_MAX;
+    }
 
     function _sync() internal {
         reserveA = uint112(IERC20(tokenA).balanceOf(address(this)));

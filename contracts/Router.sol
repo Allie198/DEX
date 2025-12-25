@@ -154,8 +154,8 @@ contract Router {
             address pair = factory.getPair(path[i], path[i + 1]);
             require(pair != address(0), "PAIR_MISSING");
 
-            (uint256 rIn, uint256 rOut) = _reservesFor(pair, path[i]);
-            amounts[i + 1] = getAmountOut(amounts[i], rIn, rOut);
+            (uint256 out,) = Pair(pair).quoteAmountOut(path[i], amounts[i]);
+            amounts[i + 1] = out;
         }
     }
 
@@ -243,3 +243,5 @@ contract Router {
         if (bal > 0) IERC20(token).safeTransfer(to, bal);
     }
 }   
+
+ 
