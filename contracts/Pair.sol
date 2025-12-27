@@ -5,6 +5,10 @@ import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
 contract Pair is ERC20 {
+
+    address internal constant BURN_ADDRESS = 0x000000000000000000000000000000000000dEaD;
+
+
     using SafeERC20 for IERC20;
 
     address public immutable tokenA;
@@ -34,8 +38,9 @@ contract Pair is ERC20 {
         return (reserveA, reserveB);
     }
 
-    function addLiquidity(uint256 amountAIn, uint256 amountBIn) external returns (uint256 LP) {
+    function addLiquidity(uint256 amountAIn, uint256 amountBIn, address to) external returns (uint256 LP) {
         require(amountAIn > 0 && amountBIn > 0, "AMOUNTS");
+        require(to != address(0), "To can not be greater than zero");
 
         IERC20(tokenA).safeTransferFrom(msg.sender, address(this), amountAIn);
         IERC20(tokenB).safeTransferFrom(msg.sender, address(this), amountBIn);
@@ -46,7 +51,7 @@ contract Pair is ERC20 {
             uint256 liquidity = _sqrt(amountAIn * amountBIn);
             require(liquidity > MINIMUM_LIQUIDITY, "Liquidity must be greater than MINIMUM_LIQUDITY");
 
-            _mint(address(0), MINIMUM_LIQUIDITY);
+            _mint(BURN_ADDRESS, MINIMUM_LIQUIDITY);
             LP = liquidity - MINIMUM_LIQUIDITY;
 
         } else {
@@ -54,7 +59,8 @@ contract Pair is ERC20 {
             require(LP > 0, "Liquidity must be greater than zero");
         }
 
-        _mint(msg.sender, LP);
+        require(to != address(0), "To cannot be address(0)");
+        _mint(to, LP);
         _sync();
      
 
@@ -65,7 +71,6 @@ contract Pair is ERC20 {
         require(lp > 0, "LP0");
 
         uint256 _totalSupply = totalSupply();
-        // LP token, Pair'in ERC20'si olduğu için user balance kontrolü ERC20 içinden gelir.
         amountAOut = (lp * reserveA) / _totalSupply;
         amountBOut = (lp * reserveB) / _totalSupply;
 
@@ -89,9 +94,10 @@ contract Pair is ERC20 {
 
         IERC20(tokenIn).safeTransferFrom(msg.sender, address(this), amountIn);
 
-        uint256 feeBPS = _dynamicFeeBps(amountIn, rIn);
-        uint256 amountInWithFee = amountIn * (FEE_DENOMINATOR - feeBPS);
-        amountOut = (amountInWithFee * rOut) / (rIn * FEE_DENOMINATOR + amountIn);
+        uint256 feeBps = _dynamicFeeBps(amountIn, rIn);
+        uint256 amountInAfterFee = amountIn * (FEE_DENOMINATOR - feeBps);
+        amountOut = (amountInAfterFee * rOut) / (rIn * FEE_DENOMINATOR + amountInAfterFee);
+
 
         require(amountOut >= minOut && amountOut > 0, "SLIPPAGE");
 
@@ -101,19 +107,28 @@ contract Pair is ERC20 {
         emit Swap(msg.sender, tokenIn, tokenOut, amountIn, amountOut, to);
     }
 
-    function quoteAmountOut(address tokenIn, uint256 amountIn) external view returns (uint256 amountOut, uint256 feeBps) {
-        require(tokenIn == tokenA || tokenIn == tokenB, "Token not found");
-        require(amountIn > 0, "Amount must be greater than zero");
+    function quoteOut(address tokenIn, uint256 amountIn) external view returns (uint256 amountOut) {
+        require(tokenIn == tokenA || tokenIn == tokenB, "TOKEN");
+        require(amountIn > 0, "IN0");
 
         bool isA = (tokenIn == tokenA);
         (uint256 reserveIn, uint256 reserveOut) = isA ? (reserveA, reserveB) : (reserveB, reserveA);
-        
-        require(reserveIn > 0 && reserveOut > 0, "Reserve must be greater than zero");
-        feeBps = _dynamicFeeBps(amountIn, reserveIn);
 
-        uint256 amountInWithFee = amountIn * (FEE_DENOMINATOR - feeBps);
-        amountOut = (amountInWithFee * reserveOut) / (reserveIn * FEE_DENOMINATOR + amountInWithFee);
+        require(reserveIn > 0 && reserveOut > 0, "R0");
+
+        uint256 feeBps = _dynamicFeeBps(amountIn, reserveIn);
+
+        uint256 amountInAfterFee = amountIn * (FEE_DENOMINATOR - feeBps);
+
+        amountOut = (amountInAfterFee * reserveOut) / (reserveIn * FEE_DENOMINATOR + amountInAfterFee);
     }
+
+    function feeBpsFor(uint256 amountIn, address tokenIn) external view returns (uint256 feeBps) {
+            require(tokenIn == tokenA || tokenIn == tokenB, "TOKEN");
+            uint256 reserveIn = tokenIn == tokenA ? reserveA : reserveB;
+            feeBps = _dynamicFeeBps(amountIn, reserveIn);
+    }
+
 
 
     function _dynamicFeeBps(uint256 amountIn, uint256 reserveIn) internal pure returns (uint256 feeBps) {
