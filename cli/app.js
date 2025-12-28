@@ -6,21 +6,37 @@ import { quote, swap, addLiquidity } from './dex.js'
 import { deployToken, listTokens, getAllTokenBalances } from './token.js'
 import { createOrder, readOrder, fillOrder, cancelOrder } from './limit.js'
 import { deployFactory, deployRouter, deployLimit } from './deploy.js'
+import { Chalk } from 'chalk'
 
-const GREEN = '\x1b[32m'
-const RESET = '\x1b[0m'
 
-const MONETA_BIG_MONEY_NW = String.raw`
-${GREEN}
-$$\      $$\  $$$$$$\  $$\   $$\ $$$$$$$$\ $$$$$$$$\  $$$$$$\  
-$$$\    $$$ |$$  __$$\ $$$\  $$ |$$  _____|\__$$  __|$$  __$$\ 
-$$$$\  $$$$ |$$ /  $$ |$$$$\ $$ |$$ |         $$ |   $$ /  $$ |
-$$\$$\$$ $$ |$$ |  $$ |$$ $$\$$ |$$$$$\       $$ |   $$$$$$$$ |
-$$ \$$$  $$ |$$ |  $$ |$$ \$$$$ |$$  __|      $$ |   $$  __$$ |
-$$ |\$  /$$ |$$ |  $$ |$$ |\$$$ |$$ |         $$ |   $$ |  $$ |
-$$ | \_/ $$ | $$$$$$  |$$ | \$$ |$$$$$$$$\    $$ |   $$ |  $$ |
-\__|     \__| \______/ \__|  \__|\________|   \__|   \__|  \__|
-${RESET}
+const chalk = new Chalk({ level: 3 })
+
+
+const c = {
+  brand: (s) => chalk.yellowBright.bold(s),
+  title: (s) => chalk.yellowBright.bold(s),
+  yellow: (s) => chalk.yellowBright(s),
+  dim: (s) => chalk.gray(s),
+  ok: (s) => chalk.greenBright(s),
+  warn: (s) => chalk.hex('#FFA500')(s),
+  err: (s) => chalk.redBright(s),
+  key: (s) => chalk.whiteBright(s),
+  val: (s) => chalk.cyanBright(s),
+  addr: (s) => chalk.cyanBright(s),
+  hash: (s) => chalk.greenBright(s),
+  sep: chalk.gray('─'.repeat(64)),
+}
+
+
+const MONETA_BIG_MONEY = `
+$$\\      $$\\  $$$$$$\\  $$\\   $$\\ $$$$$$$$\\ $$$$$$$$\\  $$$$$$\\  
+$$$\\    $$$ |$$  __$$\\ $$$\\  $$ |$$  _____|\\__$$  __|$$  __$$\\ 
+$$$$\\  $$$$ |$$ /  $$ |$$$$\\ $$ |$$ |         $$ |   $$ /  $$ |
+$$\\$$\\$$ $$ |$$ |  $$ |$$ $$\\$$ |$$$$$\\       $$ |   $$$$$$$$ |
+$$ \\$$$  $$ |$$ |  $$ |$$ \\$$$$ |$$  __|      $$ |   $$  __$$ |
+$$ |\\$  /$$ |$$ |  $$ |$$ |\\$$$ |$$ |         $$ |   $$ |  $$ |
+$$ | \\_/ $$ | $$$$$$  |$$ | \\$$ |$$$$$$$$\\    $$ |   $$ |  $$ |
+\\__|     \\__| \\______/ \\__|  \\__|\\________|   \\__|   \\__|  \\__|
 `
 
 function clear() {
@@ -47,17 +63,31 @@ function shortAddr(a) {
 }
 
 function subtitleFromCfg(cfg) {
-  return `RPC: ${cfg.rpc} | chainId: ${cfg.chainId} | router: ${shortAddr(cfg.router)} | factory: ${shortAddr(cfg.factory)} | limit: ${shortAddr(cfg.limit)}`
+  const router = shortAddr(cfg.router)
+  const factory = shortAddr(cfg.factory)
+  const limit = shortAddr(cfg.limit)
+
+  return [
+    `${c.key('RPC:')} ${c.val(cfg.rpc)}`,
+    `${c.key('chainId:')} ${c.val(String(cfg.chainId))}`,
+    `${c.key('router:')} ${c.addr(router)}`,
+    `${c.key('factory:')} ${c.addr(factory)}`,
+    `${c.key('limit:')} ${c.addr(limit)}`,
+  ].join(c.dim(' | '))
 }
 
 function banner(subtitle = '') {
   clear()
-  process.stdout.write(MONETA_BIG_MONEY_NW)
-  if (subtitle) process.stdout.write(subtitle + '\n\n')
+  console.log(c.brand(MONETA_BIG_MONEY))
+  if (subtitle) {
+    console.log(c.sep)
+    console.log(subtitle)
+    console.log(c.sep + '\n')
+  }
 }
 
 async function pause(msg = 'Devam (Enter)') {
-  await inquirer.prompt([{ type: 'input', name: 'x', message: msg }])
+  await inquirer.prompt([{ type: 'input', name: 'x', message: c.dim(msg) }])
 }
 
 async function ensureCoreDeployed(cfg, clients) {
@@ -69,23 +99,23 @@ async function ensureCoreDeployed(cfg, clients) {
   if (!need) return cfg
 
   banner(subtitleFromCfg(cfg))
-  console.log('[core] Deploying missing contracts...\n')
+  console.log(c.title('[core] Deploying missing contracts...') + '\n')
 
   const ctx = { cfg, ...clients }
 
   const factory = isZeroAddr(cfg.factory) ? await deployFactory(ctx) : cfg.factory
-  console.log('[core] Factory:', factory)
+  console.log(c.key('[core] Factory:'), c.addr(factory))
 
   const router = isZeroAddr(cfg.router) ? await deployRouter(ctx, factory) : cfg.router
-  console.log('[core] Router :', router)
+  console.log(c.key('[core] Router :'), c.addr(router))
 
   const limit = isZeroAddr(cfg.limit) ? await deployLimit(ctx, router) : cfg.limit
-  console.log('[core] Limit  :', limit)
+  console.log(c.key('[core] Limit  :'), c.addr(limit))
 
   const next = { ...cfg, factory, router, limit }
   saveConfig(next)
 
-  console.log('\n[core] Saved to config.json ✅\n')
+  console.log('\n' + c.ok('[core] Saved to config.json ✅') + '\n')
   await pause()
   return next
 }
@@ -94,13 +124,13 @@ async function editConfig(cfg) {
   banner(subtitleFromCfg(cfg))
 
   const ans = await inquirer.prompt([
-    { type: 'input', name: 'rpc', message: 'RPC', default: cfg.rpc },
-    { type: 'input', name: 'chainId', message: 'chainId', default: String(cfg.chainId) },
-    { type: 'password', name: 'privateKey', message: 'privateKey', default: cfg.privateKey, mask: '*' },
+    { type: 'input', name: 'rpc', message: c.title('RPC'), default: cfg.rpc },
+    { type: 'input', name: 'chainId', message: c.title('chainId'), default: String(cfg.chainId) },
+    { type: 'password', name: 'privateKey', message: c.title('privateKey'), default: cfg.privateKey, mask: '*' },
 
-    { type: 'input', name: 'factory', message: 'factory', default: cfg.factory },
-    { type: 'input', name: 'router', message: 'router', default: cfg.router },
-    { type: 'input', name: 'limit', message: 'limit', default: cfg.limit }
+    { type: 'input', name: 'factory', message: c.title('factory'), default: cfg.factory },
+    { type: 'input', name: 'router', message: c.title('router'), default: cfg.router },
+    { type: 'input', name: 'limit', message: c.title('limit'), default: cfg.limit }
   ])
 
   const next = {
@@ -123,8 +153,8 @@ async function walletMenu(ctx) {
     const { pick } = await inquirer.prompt([{
       type: 'list',
       name: 'pick',
-      message: 'WALLET',
-      choices: ['Show Address', 'Token Balance', 'My Tokens', new inquirer.Separator(), 'Back']
+      message: c.title('WALLET'),
+      choices: ['Show Address', 'Token Balance', 'My Tokens', new inquirer.Separator(c.dim('────────')), 'Back']
     }])
 
     if (pick === 'Back') return
@@ -132,8 +162,8 @@ async function walletMenu(ctx) {
     if (pick === 'Show Address') {
       banner(subtitleFromCfg(ctx.cfg))
       const addr = ctx.account.address
-      console.log('Wallet Address:\n')
-      console.log(addr, '\n')
+      console.log(c.title('Wallet Address:\n'))
+      console.log(c.addr(addr) + '\n')
       qrcode.generate(addr, { small: true })
       await pause()
       continue
@@ -141,18 +171,18 @@ async function walletMenu(ctx) {
 
     if (pick === 'Token Balance') {
       banner(subtitleFromCfg(ctx.cfg))
-      console.log('Wallet:', ctx.account.address, '\n')
+      console.log(c.key('Wallet:'), c.addr(ctx.account.address), '\n')
 
       const balances = await getAllTokenBalances(ctx)
       if (!balances.length) {
-        console.log('tokens.json boş. Önce token deploy et.')
+        console.log(c.warn('tokens.json boş. Önce token deploy et.'))
         await pause()
         continue
       }
 
       for (const t of balances) {
         const label = `${t.symbol} ${t.name}`.trim()
-        console.log(label.padEnd(20), ':', t.balance)
+        console.log(c.yellow(label.padEnd(22)), c.dim(':'), c.val(String(t.balance)))
       }
       await pause()
       continue
@@ -162,12 +192,18 @@ async function walletMenu(ctx) {
       banner(subtitleFromCfg(ctx.cfg))
       const toks = listTokens()
       if (!toks.length) {
-        console.log('tokens.json boş. Önce Deploy Token yap.')
+        console.log(c.warn('tokens.json boş. Önce Deploy Token yap.'))
         await pause()
         continue
       }
       for (const t of toks) {
-        console.log(`- ${t.symbol || '?'} ${t.name || ''} @ ${t.address}`)
+        console.log(
+          c.dim('-'),
+          c.yellowBright.bold(t.symbol || '?'),
+          c.yellow(t.name || ''),
+          c.dim('@'),
+          c.addr(t.address)
+        )
       }
       await pause()
       continue
@@ -181,8 +217,8 @@ async function dexMenu(ctx) {
     const { pick } = await inquirer.prompt([{
       type: 'list',
       name: 'pick',
-      message: 'DEX',
-      choices: ['Deploy Token', 'Add Liquidity', 'Quote', 'Swap', new inquirer.Separator(), 'Back']
+      message: c.title('DEX'),
+      choices: ['Deploy Token', 'Add Liquidity', 'Quote', 'Swap', new inquirer.Separator(c.dim('────────')), 'Back']
     }])
 
     if (pick === 'Back') return
@@ -190,17 +226,17 @@ async function dexMenu(ctx) {
     if (pick === 'Deploy Token') {
       banner(subtitleFromCfg(ctx.cfg))
       const ans = await inquirer.prompt([
-        { type: 'input', name: 'name', message: 'Token name', default: 'MyToken' },
-        { type: 'input', name: 'symbol', message: 'Symbol', default: 'MTK' },
-        { type: 'input', name: 'decimals', message: 'Decimals', default: '18' },
-        { type: 'input', name: 'supply', message: 'Total supply (human)', default: '1000000' },
-        { type: 'input', name: 'to', message: 'Mint to', default: ctx.account.address }
+        { type: 'input', name: 'name', message: c.title('Token name'), default: 'MyToken' },
+        { type: 'input', name: 'symbol', message: c.title('Symbol'), default: 'MTK' },
+        { type: 'input', name: 'decimals', message: c.title('Decimals'), default: '18' },
+        { type: 'input', name: 'supply', message: c.title('Total supply (human)'), default: '1000000' },
+        { type: 'input', name: 'to', message: c.title('Mint to'), default: ctx.account.address }
       ])
 
       const r = await deployToken(ctx, ans.name, ans.symbol, ans.supply, ans.decimals, ans.to)
-      console.log('\nDeployed token:', r.address)
-      console.log('Tx:', r.hash)
-      console.log('\nNot: token tokens.json içine kaydedildi.')
+      console.log('\n' + c.ok('Deployed token:'), c.addr(r.address))
+      console.log(c.key('Tx:'), c.hash(r.hash))
+      console.log('\n' + c.dim('Not: token tokens.json içine kaydedildi.'))
       await pause()
       continue
     }
@@ -208,16 +244,16 @@ async function dexMenu(ctx) {
     if (pick === 'Add Liquidity') {
       banner(subtitleFromCfg(ctx.cfg))
       const ans = await inquirer.prompt([
-        { type: 'input', name: 'tokenA', message: 'First  token address' },
-        { type: 'input', name: 'tokenB', message: 'Second token address' },
-        { type: 'input', name: 'amountA', message: 'amountA (human)', default: '1000' },
-        { type: 'input', name: 'amountB', message: 'amountB (human)', default: '1000' },
-        { type: 'input', name: 'minA', message: 'minA (human)', default: '0' },
-        { type: 'input', name: 'minB', message: 'minB (human)', default: '0' }
+        { type: 'input', name: 'tokenA', message: c.title('First  token address') },
+        { type: 'input', name: 'tokenB', message: c.title('Second token address') },
+        { type: 'input', name: 'amountA', message: c.title('amountA (human)'), default: '1000' },
+        { type: 'input', name: 'amountB', message: c.title('amountB (human)'), default: '1000' },
+        { type: 'input', name: 'minA', message: c.title('minA (human)'), default: '0' },
+        { type: 'input', name: 'minB', message: c.title('minB (human)'), default: '0' }
       ])
 
       const hash = await addLiquidity(ctx, ans.tokenA, ans.tokenB, ans.amountA, ans.amountB, ans.minA, ans.minB)
-      console.log('\nTx:', hash)
+      console.log('\n' + c.key('Tx:'), c.hash(hash))
       await pause()
       continue
     }
@@ -225,14 +261,14 @@ async function dexMenu(ctx) {
     if (pick === 'Quote') {
       banner(subtitleFromCfg(ctx.cfg))
       const ans = await inquirer.prompt([
-        { type: 'input', name: 'tokenIn', message: 'tokenIn' },
-        { type: 'input', name: 'tokenOut', message: 'tokenOut' },
-        { type: 'input', name: 'amount', message: 'amountIn (human)', default: '1' }
+        { type: 'input', name: 'tokenIn', message: c.title('tokenIn') },
+        { type: 'input', name: 'tokenOut', message: c.title('tokenOut') },
+        { type: 'input', name: 'amount', message: c.title('amountIn (human)'), default: '1' }
       ])
 
       const r = await quote(ctx, ans.tokenIn, ans.tokenOut, ans.amount)
-      console.log('\nPath:', r.path.join(' -> '))
-      console.log('Quoted out:', r.outHuman)
+      console.log('\n' + c.key('Path:'), c.yellow(r.path.join(c.dim(' -> '))))
+      console.log(c.key('Quoted out:'), c.val(r.outHuman))
       await pause()
       continue
     }
@@ -240,32 +276,32 @@ async function dexMenu(ctx) {
     if (pick === 'Swap') {
       banner(subtitleFromCfg(ctx.cfg))
       const ans = await inquirer.prompt([
-        { type: 'input', name: 'tokenIn', message: 'tokenIn' },
-        { type: 'input', name: 'tokenOut', message: 'tokenOut' },
-        { type: 'input', name: 'amount', message: 'amountIn', default: '1' },
-        { type: 'input', name: 'minOut', message: 'minOut', default: '0' },
-        { type: 'input', name: 'to', message: 'to', default: ctx.account.address }
+        { type: 'input', name: 'tokenIn', message: c.title('tokenIn') },
+        { type: 'input', name: 'tokenOut', message: c.title('tokenOut') },
+        { type: 'input', name: 'amount', message: c.title('amountIn'), default: '1' },
+        { type: 'input', name: 'minOut', message: c.title('minOut'), default: '0' },
+        { type: 'input', name: 'to', message: c.title('to'), default: ctx.account.address }
       ])
 
       const q = await quote(ctx, ans.tokenIn, ans.tokenOut, ans.amount)
-      console.log('\nAuto Path:', q.path.join(' -> '))
-      console.log('Quoted out:', q.outHuman)
+      console.log('\n' + c.key('Auto Path:'), c.yellow(q.path.join(c.dim(' -> '))))
+      console.log(c.key('Quoted out:'), c.val(q.outHuman))
 
       const { confirm } = await inquirer.prompt([{
         type: 'confirm',
         name: 'confirm',
-        message: 'Proceed?',
+        message: c.warn('Proceed?'),
         default: true
       }])
 
       if (!confirm) {
-        console.log('\nCancelled.')
+        console.log('\n' + c.warn('Cancelled.'))
         await pause()
         continue
       }
 
       const hash = await swap(ctx, ans.tokenIn, ans.tokenOut, ans.amount, ans.minOut, ans.to)
-      console.log('\nTx:', hash)
+      console.log('\n' + c.key('Tx:'), c.hash(hash))
       await pause()
       continue
     }
@@ -278,8 +314,8 @@ async function limitMenu(ctx) {
     const { pick } = await inquirer.prompt([{
       type: 'list',
       name: 'pick',
-      message: 'LIMIT',
-      choices: ['Create', 'Read', 'Fill', 'Cancel', new inquirer.Separator(), 'Back']
+      message: c.title('LIMIT'),
+      choices: ['Create', 'Read', 'Fill', 'Cancel', new inquirer.Separator(c.dim('────────')), 'Back']
     }])
 
     if (pick === 'Back') return
@@ -287,42 +323,42 @@ async function limitMenu(ctx) {
     if (pick === 'Create') {
       banner(subtitleFromCfg(ctx.cfg))
       const ans = await inquirer.prompt([
-        { type: 'input', name: 'tokenIn', message: 'tokenIn' },
-        { type: 'input', name: 'tokenOut', message: 'tokenOut' },
-        { type: 'input', name: 'amount', message: 'amountIn (human)', default: '1' },
-        { type: 'input', name: 'minOut', message: 'minOut (human)', default: '0' },
-        { type: 'input', name: 'expireAt', message: 'expireAt unix (0=none)', default: '0' }
+        { type: 'input', name: 'tokenIn', message: c.title('tokenIn') },
+        { type: 'input', name: 'tokenOut', message: c.title('tokenOut') },
+        { type: 'input', name: 'amount', message: c.title('amountIn (human)'), default: '1' },
+        { type: 'input', name: 'minOut', message: c.title('minOut (human)'), default: '0' },
+        { type: 'input', name: 'expireAt', message: c.title('expireAt unix (0=none)'), default: '0' }
       ])
 
       const hash = await createOrder(ctx, ans.tokenIn, ans.tokenOut, ans.amount, ans.minOut, Number(ans.expireAt))
-      console.log('\nTx:', hash)
+      console.log('\n' + c.key('Tx:'), c.hash(hash))
       await pause()
       continue
     }
 
     if (pick === 'Read') {
       banner(subtitleFromCfg(ctx.cfg))
-      const { id } = await inquirer.prompt([{ type: 'input', name: 'id', message: 'order id' }])
+      const { id } = await inquirer.prompt([{ type: 'input', name: 'id', message: c.title('order id') }])
       const o = await readOrder(ctx, id)
-      console.log('\nOrder:', o)
+      console.log('\n' + c.key('Order:'), o)
       await pause()
       continue
     }
 
     if (pick === 'Fill') {
       banner(subtitleFromCfg(ctx.cfg))
-      const { id } = await inquirer.prompt([{ type: 'input', name: 'id', message: 'order id' }])
+      const { id } = await inquirer.prompt([{ type: 'input', name: 'id', message: c.title('order id') }])
       const hash = await fillOrder(ctx, id)
-      console.log('\nTx:', hash)
+      console.log('\n' + c.key('Tx:'), c.hash(hash))
       await pause()
       continue
     }
 
     if (pick === 'Cancel') {
       banner(subtitleFromCfg(ctx.cfg))
-      const { id } = await inquirer.prompt([{ type: 'input', name: 'id', message: 'order id' }])
+      const { id } = await inquirer.prompt([{ type: 'input', name: 'id', message: c.title('order id') }])
       const hash = await cancelOrder(ctx, id)
-      console.log('\nTx:', hash)
+      console.log('\n' + c.key('Tx:'), c.hash(hash))
       await pause()
       continue
     }
@@ -339,8 +375,8 @@ async function main() {
     const { pick } = await inquirer.prompt([{
       type: 'list',
       name: 'pick',
-      message: 'Welcome to MONETA SWAP\n',
-      choices: ['Wallet', 'DEX', 'Limit', 'Config', new inquirer.Separator(), 'Exit']
+      message: c.brand('Welcome to MONETA SWAP\n'),
+      choices: ['Wallet', 'DEX', 'Limit', 'Config', new inquirer.Separator(c.dim('────────')), 'Exit']
     }])
 
     if (pick === 'Exit') cleanup(0)
@@ -359,6 +395,6 @@ async function main() {
 }
 
 main().catch((e) => {
-  console.error(e)
+  console.error(c.err(String(e?.stack || e)))
   cleanup(1)
 })

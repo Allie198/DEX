@@ -14,6 +14,7 @@ function loadArtifact(contractName) {
     `${contractName}.sol`,
     `${contractName}.json`
   )
+  
   const raw = fs.readFileSync(p, 'utf8')
   const j = JSON.parse(raw)
   const bytecode =

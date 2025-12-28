@@ -1,4 +1,4 @@
-import { LimitOrderArtifact, ERC20Abi } from './abi.js'
+import { LimitOrderAbi, ERC20Abi } from './abi.js'
 import { mustAddress, parseUnits } from './chain.js'
 import { approveIfNeeded } from './dex.js'
 

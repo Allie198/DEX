@@ -50,6 +50,7 @@ contract LimitOrder is ReentrancyGuard {
         uint256 minAmountOut,
         uint64 expireAt
     );
+
     event OrderCancelled(uint256 indexed id);
     event OrderFilled(uint256 indexed id, address indexed filler, uint256 amountOut);
     event OrderExpired(uint256 indexed id);
@@ -71,6 +72,7 @@ contract LimitOrder is ReentrancyGuard {
         require(tokenIn != tokenOut, "LIMIT: tokenIn and tokenOut must differ");
         require(amountIn > 0, "LIMIT: amountIn must be > 0");
         require(minAmountOut > 0, "LIMIT: minAmountOut must be > 0");
+        
         if (expireAt != 0) require(expireAt > uint64(block.timestamp), "LIMIT: expireAt must be in future");
 
         IERC20(tokenIn).safeTransferFrom(msg.sender, address(this), amountIn);
