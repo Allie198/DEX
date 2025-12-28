@@ -4,6 +4,7 @@ import { loadConfig, saveConfig, makeClients, mustAddress } from './chain.js'
 import { quote, swap, addLiquidity } from './dex.js'
 import { deployToken, getTokenBalance, listTokens, tokenMeta, getAllTokenBalances} from './token.js'
 import { createOrder, readOrder, fillOrder, cancelOrder } from './limit.js'
+import { deployFactory, deployRouter, deployLimit } from './deploy.js'
 import qrcode from 'qrcode-terminal'
 
 
@@ -49,6 +50,38 @@ function hideCursor() {
 
 function showCursor() {
   process.stdout.write('\x1b[?25h')
+}
+
+function isZeroAddr(x) {
+  return !x || x === '0x' || /^0x0{40}$/i.test(x)
+}
+
+async function ensureCoreDeployed(cfg, clients) {
+  const need =
+    isZeroAddr(cfg.factory) ||
+    isZeroAddr(cfg.router) ||
+    isZeroAddr(cfg.limit)
+
+  if (!need) return cfg
+
+  console.log('\n[core] Deploying missing contracts...\n')
+
+  const ctx = { cfg, ...clients }
+
+  const factory = isZeroAddr(cfg.factory) ? await deployFactory(ctx) : cfg.factory
+  console.log('[core] Factory:', factory)
+
+  const router = isZeroAddr(cfg.router) ? await deployRouter(ctx, factory) : cfg.router
+  console.log('[core] Router :', router)
+
+  const limit = isZeroAddr(cfg.limit) ? await deployLimit(ctx, router) : cfg.limit
+  console.log('[core] Limit  :', limit)
+
+  const next = { ...cfg, factory, router, limit }
+  saveConfig(next)
+
+  console.log('\n[core] Saved to config.json ✅\n')
+  return next
 }
 
 function render(title, items, idx, subtitle = '') {
@@ -363,6 +396,8 @@ async function limitMenu(ctx) {
 
 async function main() {
   let cfg = loadConfig()
+  const clients0 = makeClients(cfg);
+  cfg = await ensureCoreDeployed(cfg, clients0);
 
   for (;;) {
     const pick = await menu('MAIN', ['Wallet', 'DEX', 'Limit', 'Config', 'Exit'], subtitleFromCfg(cfg))

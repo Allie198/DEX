@@ -10,7 +10,11 @@ const __dirname = path.dirname(__filename)
 const TOKENS_PATH = path.resolve(__dirname, 'tokens.json')
 
 function loadTokens() {
-  try { return JSON.parse(fs.readFileSync(TOKENS_PATH, 'utf8')) } catch { return [] }
+  try { 
+    return JSON.parse(fs.readFileSync(TOKENS_PATH, 'utf8')) 
+  } catch { 
+    return [] 
+  }
 }
 
 function saveTokens(tokens) {
