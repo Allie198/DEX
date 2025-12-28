@@ -1,19 +1,16 @@
-import readline from 'node:readline'
+import inquirer from 'inquirer'
+import qrcode from 'qrcode-terminal'
 
 import { loadConfig, saveConfig, makeClients, mustAddress } from './chain.js'
 import { quote, swap, addLiquidity } from './dex.js'
-import { deployToken, getTokenBalance, listTokens, tokenMeta, getAllTokenBalances} from './token.js'
+import { deployToken, listTokens, getAllTokenBalances } from './token.js'
 import { createOrder, readOrder, fillOrder, cancelOrder } from './limit.js'
 import { deployFactory, deployRouter, deployLimit } from './deploy.js'
-import qrcode from 'qrcode-terminal'
-
-
-const rl = readline.createInterface({ input: process.stdin, output: process.stdout })
 
 const GREEN = '\x1b[32m'
 const RESET = '\x1b[0m'
 
-const MONETA_BIG_MONEY_NW = String.raw `
+const MONETA_BIG_MONEY_NW = String.raw`
 ${GREEN}
 $$\      $$\  $$$$$$\  $$\   $$\ $$$$$$$$\ $$$$$$$$\  $$$$$$\  
 $$$\    $$$ |$$  __$$\ $$$\  $$ |$$  _____|\__$$  __|$$  __$$\ 
@@ -23,16 +20,14 @@ $$ \$$$  $$ |$$ |  $$ |$$ \$$$$ |$$  __|      $$ |   $$  __$$ |
 $$ |\$  /$$ |$$ |  $$ |$$ |\$$$ |$$ |         $$ |   $$ |  $$ |
 $$ | \_/ $$ | $$$$$$  |$$ | \$$ |$$$$$$$$\    $$ |   $$ |  $$ |
 \__|     \__| \______/ \__|  \__|\________|   \__|   \__|  \__|
-                                                               
-                                                               
-                                                               
 ${RESET}
 `
 
+function clear() {
+  process.stdout.write('\x1b[2J\x1b[H')
+}
 
 function cleanup(code = 0) {
-  try { if (process.stdin.isTTY) process.stdin.setRawMode(false) } catch {}
-  try { rl.close() } catch {}
   process.stdout.write('\n')
   process.exit(code)
 }
@@ -40,20 +35,29 @@ function cleanup(code = 0) {
 process.on('SIGINT', () => cleanup(0))
 process.on('SIGTERM', () => cleanup(0))
 
-function clear() {
-  process.stdout.write('\x1b[2J\x1b[H')
-}
-
-function hideCursor() {
-  process.stdout.write('\x1b[?25l')
-}
-
-function showCursor() {
-  process.stdout.write('\x1b[?25h')
-}
-
 function isZeroAddr(x) {
   return !x || x === '0x' || /^0x0{40}$/i.test(x)
+}
+
+function shortAddr(a) {
+  if (!a || typeof a !== 'string') return 'unset'
+  if (a === '0x') return 'unset'
+  if (a.length < 12) return a
+  return `${a.slice(0, 6)}…${a.slice(-4)}`
+}
+
+function subtitleFromCfg(cfg) {
+  return `RPC: ${cfg.rpc} | chainId: ${cfg.chainId} | router: ${shortAddr(cfg.router)} | factory: ${shortAddr(cfg.factory)} | limit: ${shortAddr(cfg.limit)}`
+}
+
+function banner(subtitle = '') {
+  clear()
+  process.stdout.write(MONETA_BIG_MONEY_NW)
+  if (subtitle) process.stdout.write(subtitle + '\n\n')
+}
+
+async function pause(msg = 'Devam (Enter)') {
+  await inquirer.prompt([{ type: 'input', name: 'x', message: msg }])
 }
 
 async function ensureCoreDeployed(cfg, clients) {
@@ -64,7 +68,8 @@ async function ensureCoreDeployed(cfg, clients) {
 
   if (!need) return cfg
 
-  console.log('\n[core] Deploying missing contracts...\n')
+  banner(subtitleFromCfg(cfg))
+  console.log('[core] Deploying missing contracts...\n')
 
   const ctx = { cfg, ...clients }
 
@@ -81,120 +86,31 @@ async function ensureCoreDeployed(cfg, clients) {
   saveConfig(next)
 
   console.log('\n[core] Saved to config.json ✅\n')
+  await pause()
   return next
 }
 
-function render(title, items, idx, subtitle = '') {
-  clear()
-  process.stdout.write(MONETA_BIG_MONEY_NW)
-  process.stdout.write('\n\n')
-  if (subtitle) process.stdout.write(`${subtitle}\n`)
-  process.stdout.write('\n')
-  for (let i = 0; i < items.length; i++) {
-    const prefix = i === idx ? '➤ ' : '  '
-    const line = `${prefix}${items[i]}`
-    if (i === idx) process.stdout.write(`\x1b[7m${line}\x1b[0m\n`)
-    else process.stdout.write(`${line}\n`)
-  }
-  process.stdout.write('\n(↑ ↓ seç, Enter onayla, Esc geri, Ctrl+C çık)\n')
-}
-
-function menu(title, items, subtitle = '') {
-  return new Promise((resolve) => {
-    let idx = 0
-
-    readline.emitKeypressEvents(process.stdin)
-    if (process.stdin.isTTY) process.stdin.setRawMode(true)
-
-    hideCursor()
-    render(title, items, idx, subtitle)
-
-    function onKey(_, key) {
-      if (!key) return
-
-      if (key.ctrl && key.name === 'c') {
-        process.stdin.off('keypress', onKey)
-        showCursor()
-        cleanup(0)
-        return
-      }
-
-      if (key.name === 'up') {
-        idx = (idx - 1 + items.length) % items.length
-        render(title, items, idx, subtitle)
-        return
-      }
-
-      if (key.name === 'down') {
-        idx = (idx + 1) % items.length
-        render(title, items, idx, subtitle)
-        return
-      }
-
-      if (key.name === 'return') {
-        process.stdin.off('keypress', onKey)
-        showCursor()
-        resolve(items[idx])
-        return
-      }
-
-      if (key.name === 'escape') {
-        process.stdin.off('keypress', onKey)
-        showCursor()
-        resolve('__BACK__')
-        return
-      }
-    }
-
-    process.stdin.on('keypress', onKey)
-  })
-}
-
-function ask(q, def = '') {
-  return new Promise((resolve) => {
-    const p = def ? `${q} (${def}): ` : `${q}: `
-    rl.question(p, (ans) => {
-      const v = (ans ?? '').trim()
-      resolve(v.length ? v : def)
-    })
-  })
-}
-
-async function pause(msg = 'Devam (Enter)') {
-  await ask(`\n${msg}`, '')
-}
-
-function shortAddr(a) {
-  if (!a || typeof a !== 'string') return 'unset'
-  if (a === '0x') return 'unset'
-  if (a.length < 12) return a
-  return `${a.slice(0, 6)}…${a.slice(-4)}`
-}
-
-function subtitleFromCfg(cfg) {
-  return `RPC: ${cfg.rpc} | chainId: ${cfg.chainId} | router: ${shortAddr(cfg.router)} | factory: ${shortAddr(cfg.factory)} | limit: ${shortAddr(cfg.limit)}`
-}
-
 async function editConfig(cfg) {
-  clear()
-  process.stdout.write(MONETA_BIG_MONEY_NW)
+  banner(subtitleFromCfg(cfg))
 
-  const rpc = await ask('RPC', cfg.rpc)
-  const chainIdStr = await ask('chainId', String(cfg.chainId))
-  const privateKey = await ask('privateKey', cfg.privateKey)
+  const ans = await inquirer.prompt([
+    { type: 'input', name: 'rpc', message: 'RPC', default: cfg.rpc },
+    { type: 'input', name: 'chainId', message: 'chainId', default: String(cfg.chainId) },
+    { type: 'password', name: 'privateKey', message: 'privateKey', default: cfg.privateKey, mask: '*' },
 
-  const factory = await ask('factory', cfg.factory)
-  const router = await ask('router', cfg.router)
-  const limit = await ask('limit', cfg.limit)
+    { type: 'input', name: 'factory', message: 'factory', default: cfg.factory },
+    { type: 'input', name: 'router', message: 'router', default: cfg.router },
+    { type: 'input', name: 'limit', message: 'limit', default: cfg.limit }
+  ])
 
   const next = {
     ...cfg,
-    rpc,
-    chainId: Number(chainIdStr),
-    privateKey,
-    factory: factory === '0x' ? '0x' : mustAddress(factory, 'factory'),
-    router: router === '0x' ? '0x' : mustAddress(router, 'router'),
-    limit: limit === '0x' ? '0x' : mustAddress(limit, 'limit')
+    rpc: ans.rpc,
+    chainId: Number(ans.chainId),
+    privateKey: ans.privateKey,
+    factory: ans.factory === '0x' ? '0x' : mustAddress(ans.factory, 'factory'),
+    router: ans.router === '0x' ? '0x' : mustAddress(ans.router, 'router'),
+    limit: ans.limit === '0x' ? '0x' : mustAddress(ans.limit, 'limit')
   }
 
   saveConfig(next)
@@ -203,47 +119,47 @@ async function editConfig(cfg) {
 
 async function walletMenu(ctx) {
   for (;;) {
-    const pick = await menu('WALLET', ['Show Address', 'Token Balance', 'My Tokens', 'Back'], subtitleFromCfg(ctx.cfg))
-    if (pick === 'Back' || pick === '__BACK__') return
+    banner(subtitleFromCfg(ctx.cfg))
+    const { pick } = await inquirer.prompt([{
+      type: 'list',
+      name: 'pick',
+      message: 'WALLET',
+      choices: ['Show Address', 'Token Balance', 'My Tokens', new inquirer.Separator(), 'Back']
+    }])
+
+    if (pick === 'Back') return
 
     if (pick === 'Show Address') {
-          clear()
-          process.stdout.write(MONETA_BIG_MONEY_NW)
-
-          const addr = ctx.account.address
-
-          console.log('Wallet Address:\n')
-          console.log(addr, '\n')
-
-          qrcode.generate(addr, { small: true })
-
-          await pause()
+      banner(subtitleFromCfg(ctx.cfg))
+      const addr = ctx.account.address
+      console.log('Wallet Address:\n')
+      console.log(addr, '\n')
+      qrcode.generate(addr, { small: true })
+      await pause()
+      continue
     }
 
     if (pick === 'Token Balance') {
-        clear()
-        process.stdout.write(MONETA_BIG_MONEY_NW)
+      banner(subtitleFromCfg(ctx.cfg))
+      console.log('Wallet:', ctx.account.address, '\n')
 
-        console.log('Wallet:', ctx.account.address, '\n')
+      const balances = await getAllTokenBalances(ctx)
+      if (!balances.length) {
+        console.log('tokens.json boş. Önce token deploy et.')
+        await pause()
+        continue
+      }
 
-        const balances = await getAllTokenBalances(ctx)
-
-        if (!balances.length) {
-          console.log('tokens.json boş. Önce token deploy et.')
-          await pause()
-          continue
-   }
-
-    for (const t of balances) {
-      const label = `${t.symbol} ${t.name}`.trim()
-      console.log(label.padEnd(20), ':', t.balance)
+      for (const t of balances) {
+        const label = `${t.symbol} ${t.name}`.trim()
+        console.log(label.padEnd(20), ':', t.balance)
+      }
+      await pause()
+      continue
     }
 
-     await pause()
-  }
     if (pick === 'My Tokens') {
-      clear()
-      process.stdout.write(MONETA_BIG_MONEY_NW)
+      banner(subtitleFromCfg(ctx.cfg))
       const toks = listTokens()
       if (!toks.length) {
         console.log('tokens.json boş. Önce Deploy Token yap.')
@@ -254,153 +170,178 @@ async function walletMenu(ctx) {
         console.log(`- ${t.symbol || '?'} ${t.name || ''} @ ${t.address}`)
       }
       await pause()
+      continue
     }
   }
 }
 
 async function dexMenu(ctx) {
   for (;;) {
-    const pick = await menu(
-      'DEX',
-      ['Deploy Token', 'Add Liquidity', 'Quote', 'Swap', 'Back'],
-      subtitleFromCfg(ctx.cfg)
-    )
-    if (pick === 'Back' || pick === '__BACK__') return
+    banner(subtitleFromCfg(ctx.cfg))
+    const { pick } = await inquirer.prompt([{
+      type: 'list',
+      name: 'pick',
+      message: 'DEX',
+      choices: ['Deploy Token', 'Add Liquidity', 'Quote', 'Swap', new inquirer.Separator(), 'Back']
+    }])
+
+    if (pick === 'Back') return
 
     if (pick === 'Deploy Token') {
-      clear()
-      process.stdout.write(MONETA_BIG_MONEY_NW)
+      banner(subtitleFromCfg(ctx.cfg))
+      const ans = await inquirer.prompt([
+        { type: 'input', name: 'name', message: 'Token name', default: 'MyToken' },
+        { type: 'input', name: 'symbol', message: 'Symbol', default: 'MTK' },
+        { type: 'input', name: 'decimals', message: 'Decimals', default: '18' },
+        { type: 'input', name: 'supply', message: 'Total supply (human)', default: '1000000' },
+        { type: 'input', name: 'to', message: 'Mint to', default: ctx.account.address }
+      ])
 
-      const name = await ask('Token name', 'MyToken')
-      const symbol = await ask('Symbol', 'MTK')
-      const decimals = await ask('Decimals', '18')
-      const supply = await ask('Total supply (human)', '1000000')
-      const to = await ask('Mint to', ctx.account.address)
-
-      const r = await deployToken(ctx, name, symbol, supply, decimals, to)
+      const r = await deployToken(ctx, ans.name, ans.symbol, ans.supply, ans.decimals, ans.to)
       console.log('\nDeployed token:', r.address)
       console.log('Tx:', r.hash)
       console.log('\nNot: token tokens.json içine kaydedildi.')
       await pause()
+      continue
     }
 
     if (pick === 'Add Liquidity') {
-      clear()
-      process.stdout.write(MONETA_BIG_MONEY_NW)
+      banner(subtitleFromCfg(ctx.cfg))
+      const ans = await inquirer.prompt([
+        { type: 'input', name: 'tokenA', message: 'First  token address' },
+        { type: 'input', name: 'tokenB', message: 'Second token address' },
+        { type: 'input', name: 'amountA', message: 'amountA (human)', default: '1000' },
+        { type: 'input', name: 'amountB', message: 'amountB (human)', default: '1000' },
+        { type: 'input', name: 'minA', message: 'minA (human)', default: '0' },
+        { type: 'input', name: 'minB', message: 'minB (human)', default: '0' }
+      ])
 
-      const tokenA = await ask('tokenA address')
-      const tokenB = await ask('tokenB address')
-      const amountA = await ask('amountA (human)', '1000')
-      const amountB = await ask('amountB (human)', '1000')
-      const minA = await ask('minA (human)', '0')
-      const minB = await ask('minB (human)', '0')
-
-      const hash = await addLiquidity(ctx, tokenA, tokenB, amountA, amountB, minA, minB)
+      const hash = await addLiquidity(ctx, ans.tokenA, ans.tokenB, ans.amountA, ans.amountB, ans.minA, ans.minB)
       console.log('\nTx:', hash)
       await pause()
+      continue
     }
 
     if (pick === 'Quote') {
-      clear()
-      process.stdout.write(MONETA_BIG_MONEY_NW)
+      banner(subtitleFromCfg(ctx.cfg))
+      const ans = await inquirer.prompt([
+        { type: 'input', name: 'tokenIn', message: 'tokenIn' },
+        { type: 'input', name: 'tokenOut', message: 'tokenOut' },
+        { type: 'input', name: 'amount', message: 'amountIn (human)', default: '1' }
+      ])
 
-      const tokenIn = await ask('tokenIn')
-      const tokenOut = await ask('tokenOut')
-      const amount = await ask('amountIn (human)', '1')
-
-      const r = await quote(ctx, tokenIn, tokenOut, amount)
+      const r = await quote(ctx, ans.tokenIn, ans.tokenOut, ans.amount)
       console.log('\nPath:', r.path.join(' -> '))
       console.log('Quoted out:', r.outHuman)
       await pause()
+      continue
     }
 
     if (pick === 'Swap') {
-      clear()
-      process.stdout.write(MONETA_BIG_MONEY_NW)
+      banner(subtitleFromCfg(ctx.cfg))
+      const ans = await inquirer.prompt([
+        { type: 'input', name: 'tokenIn', message: 'tokenIn' },
+        { type: 'input', name: 'tokenOut', message: 'tokenOut' },
+        { type: 'input', name: 'amount', message: 'amountIn', default: '1' },
+        { type: 'input', name: 'minOut', message: 'minOut', default: '0' },
+        { type: 'input', name: 'to', message: 'to', default: ctx.account.address }
+      ])
 
-      const tokenIn = await ask('tokenIn')
-      const tokenOut = await ask('tokenOut')
-      const amount = await ask('amountIn (human)', '1')
-      const minOut = await ask('minOut (human)', '0')
-      const to = await ask('to', ctx.account.address)
-
-      const q = await quote(ctx, tokenIn, tokenOut, amount)
+      const q = await quote(ctx, ans.tokenIn, ans.tokenOut, ans.amount)
       console.log('\nAuto Path:', q.path.join(' -> '))
       console.log('Quoted out:', q.outHuman)
 
-      const confirm = await ask('Proceed? (y/n)', 'y')
-      if (confirm.toLowerCase() !== 'y') {
+      const { confirm } = await inquirer.prompt([{
+        type: 'confirm',
+        name: 'confirm',
+        message: 'Proceed?',
+        default: true
+      }])
+
+      if (!confirm) {
         console.log('\nCancelled.')
         await pause()
         continue
       }
 
-      const hash = await swap(ctx, tokenIn, tokenOut, amount, minOut, to)
+      const hash = await swap(ctx, ans.tokenIn, ans.tokenOut, ans.amount, ans.minOut, ans.to)
       console.log('\nTx:', hash)
       await pause()
+      continue
     }
   }
 }
 
 async function limitMenu(ctx) {
   for (;;) {
-    const pick = await menu('LIMIT', ['Create', 'Read', 'Fill', 'Cancel', 'Back'], subtitleFromCfg(ctx.cfg))
-    if (pick === 'Back' || pick === '__BACK__') return
+    banner(subtitleFromCfg(ctx.cfg))
+    const { pick } = await inquirer.prompt([{
+      type: 'list',
+      name: 'pick',
+      message: 'LIMIT',
+      choices: ['Create', 'Read', 'Fill', 'Cancel', new inquirer.Separator(), 'Back']
+    }])
+
+    if (pick === 'Back') return
 
     if (pick === 'Create') {
-      clear()
-      process.stdout.write(MONETA_BIG_MONEY_NW)
+      banner(subtitleFromCfg(ctx.cfg))
+      const ans = await inquirer.prompt([
+        { type: 'input', name: 'tokenIn', message: 'tokenIn' },
+        { type: 'input', name: 'tokenOut', message: 'tokenOut' },
+        { type: 'input', name: 'amount', message: 'amountIn (human)', default: '1' },
+        { type: 'input', name: 'minOut', message: 'minOut (human)', default: '0' },
+        { type: 'input', name: 'expireAt', message: 'expireAt unix (0=none)', default: '0' }
+      ])
 
-      const tokenIn = await ask('tokenIn')
-      const tokenOut = await ask('tokenOut')
-      const amount = await ask('amountIn (human)', '1')
-      const minOut = await ask('minOut (human)', '0')
-      const expireAt = await ask('expireAt unix (0=none)', '0')
-
-      const hash = await createOrder(ctx, tokenIn, tokenOut, amount, minOut, Number(expireAt))
+      const hash = await createOrder(ctx, ans.tokenIn, ans.tokenOut, ans.amount, ans.minOut, Number(ans.expireAt))
       console.log('\nTx:', hash)
       await pause()
+      continue
     }
 
     if (pick === 'Read') {
-      clear()
-      process.stdout.write(MONETA_BIG_MONEY_NW)
-
-      const id = await ask('order id')
+      banner(subtitleFromCfg(ctx.cfg))
+      const { id } = await inquirer.prompt([{ type: 'input', name: 'id', message: 'order id' }])
       const o = await readOrder(ctx, id)
       console.log('\nOrder:', o)
       await pause()
+      continue
     }
 
     if (pick === 'Fill') {
-      clear()
-      process.stdout.write(MONETA_BIG_MONEY_NW)
-
-      const id = await ask('order id')
+      banner(subtitleFromCfg(ctx.cfg))
+      const { id } = await inquirer.prompt([{ type: 'input', name: 'id', message: 'order id' }])
       const hash = await fillOrder(ctx, id)
       console.log('\nTx:', hash)
       await pause()
+      continue
     }
 
     if (pick === 'Cancel') {
-      clear()
-      process.stdout.write(MONETA_BIG_MONEY_NW)
-
-      const id = await ask('order id')
+      banner(subtitleFromCfg(ctx.cfg))
+      const { id } = await inquirer.prompt([{ type: 'input', name: 'id', message: 'order id' }])
       const hash = await cancelOrder(ctx, id)
       console.log('\nTx:', hash)
       await pause()
+      continue
     }
   }
 }
 
 async function main() {
   let cfg = loadConfig()
-  const clients0 = makeClients(cfg);
-  cfg = await ensureCoreDeployed(cfg, clients0);
+  const clients0 = makeClients(cfg)
+  cfg = await ensureCoreDeployed(cfg, clients0)
 
   for (;;) {
-    const pick = await menu('MAIN', ['Wallet', 'DEX', 'Limit', 'Config', 'Exit'], subtitleFromCfg(cfg))
+    banner(subtitleFromCfg(cfg))
+    const { pick } = await inquirer.prompt([{
+      type: 'list',
+      name: 'pick',
+      message: 'Welcome to MONETA SWAP\n',
+      choices: ['Wallet', 'DEX', 'Limit', 'Config', new inquirer.Separator(), 'Exit']
+    }])
 
     if (pick === 'Exit') cleanup(0)
 

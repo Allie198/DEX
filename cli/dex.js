@@ -90,8 +90,8 @@ export async function approveIfNeeded(ctx, token, spender, needed) {
     functionName: 'allowance',
     args: [ctx.account.address, spender]
   })
-
   if (allowance >= needed) return null
+
 
   return ctx.walletClient.writeContract({
     address: token,
