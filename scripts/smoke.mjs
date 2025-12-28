@@ -11,6 +11,7 @@ import {
 import { privateKeyToAccount } from "viem/accounts";
 
 const RPC = "http://127.0.0.1:8545";
+
 const CHAIN = {
   id: 31337,
   name: "Hardhat",

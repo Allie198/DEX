@@ -18,7 +18,12 @@ interface IRouter {
 contract LimitOrder is ReentrancyGuard {
     using SafeERC20 for IERC20;
 
-    enum Status { OPEN, FILLED, CANCELLED, EXPIRED }
+    enum Status {
+        OPEN,
+        FILLED,
+        CANCELLED,
+        EXPIRED
+    }
 
     struct Order {
         address maker;
@@ -66,6 +71,7 @@ contract LimitOrder is ReentrancyGuard {
         require(tokenIn != tokenOut, "LIMIT: tokenIn and tokenOut must differ");
         require(amountIn > 0, "LIMIT: amountIn must be > 0");
         require(minAmountOut > 0, "LIMIT: minAmountOut must be > 0");
+        if (expireAt != 0) require(expireAt > uint64(block.timestamp), "LIMIT: expireAt must be in future");
 
         IERC20(tokenIn).safeTransferFrom(msg.sender, address(this), amountIn);
 
@@ -115,25 +121,15 @@ contract LimitOrder is ReentrancyGuard {
         uint256[] memory quoted = router.getAmountsOut(o.amountIn, path);
         require(quoted[1] >= o.minAmountOut, "LIMIT: price not met (minOut not reached)");
 
-        _approveExact(o.tokenIn, address(router), o.amountIn);
+        IERC20(o.tokenIn).forceApprove(address(router), o.amountIn);
 
-        uint256[] memory amounts = router.swapExactTokensForTokens(
-            o.amountIn,
-            o.minAmountOut,
-            path,
-            o.maker
-        );
+        uint256[] memory amounts = router.swapExactTokensForTokens(o.amountIn, o.minAmountOut, path, o.maker);
 
         amountOut = amounts[amounts.length - 1];
         o.status = Status.FILLED;
 
         emit OrderFilled(id, msg.sender, amountOut);
     }
-
-    function _approveExact(address token, address spender, uint256 amount) internal {
-             IERC20(token).forceApprove(spender, amount);
-    }
-
 
     function isFillable(uint256 id) external view returns (bool ok, uint256 quotedOut) {
         Order storage o = orders[id];

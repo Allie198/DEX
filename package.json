@@ -25,6 +25,7 @@
   },
   "dependencies": {
     "@openzeppelin/contracts": "^5.4.0",
-    "inquirer": "^13.1.0"
+    "inquirer": "^13.1.0",
+    "qrcode-terminal": "^0.12.0"
   }
 }

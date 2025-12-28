@@ -10,11 +10,11 @@ contract Factory {
     event PairCreated(address indexed tokenA, address indexed tokenB, address pair);
 
     function createPair(address tokenA, address tokenB) external returns (address pair) {
-        require(tokenA != tokenB, "Addresses cannot be identical");
-        (address token0, address token1) = tokenA < tokenB ? (tokenA, tokenB) : (tokenB, tokenA);
+        require(tokenA != tokenB, "SAME");
+        require(tokenA != address(0) && tokenB != address(0), "ZERO");
 
-        require(token0 != address(0) && token1 != address(0), "Zero address");
-        require(getPair[token0][token1] == address(0), "Pair already exists");
+        (address token0, address token1) = tokenA < tokenB ? (tokenA, tokenB) : (tokenB, tokenA);
+        require(getPair[token0][token1] == address(0), "EXISTS");
 
         pair = address(new Pair(token0, token1));
 
@@ -24,5 +24,5 @@ contract Factory {
         allPairs.push(pair);
 
         emit PairCreated(token0, token1, pair);
-    } 
+    }
 }

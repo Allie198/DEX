@@ -18,22 +18,16 @@ contract Router {
     struct AddLiquidityVars {
         address pair;
         address pairToken0;
-
         uint112 reserve0;
         uint112 reserve1;
-
         uint256 desired0;
         uint256 desired1;
-
         uint256 min0;
         uint256 min1;
-
         uint256 amount0;
         uint256 amount1;
-
         uint256 amountA;
         uint256 amountB;
-
         uint256 liquidity;
     }
 
@@ -44,10 +38,7 @@ contract Router {
         uint256 desiredB,
         uint256 minA,
         uint256 minB
-    )
-        external
-        returns (address pair, uint256 amountA, uint256 amountB, uint256 liquidity)
-    {
+    ) external returns (address pair, uint256 amountA, uint256 amountB, uint256 liquidity) {
         require(tokenA != address(0), "ROUTER: tokenA is zero address");
         require(tokenB != address(0), "ROUTER: tokenB is zero address");
         require(tokenA != tokenB, "ROUTER: tokenA and tokenB must differ");
@@ -63,14 +54,7 @@ contract Router {
         (v.desired0, v.desired1) = _toPairOrder(tokenA, v.pairToken0, desiredA, desiredB);
         (v.min0, v.min1) = _toPairOrder(tokenA, v.pairToken0, minA, minB);
 
-        (v.amount0, v.amount1) = _optimalAmounts(
-            v.desired0,
-            v.desired1,
-            v.min0,
-            v.min1,
-            v.reserve0,
-            v.reserve1
-        );
+        (v.amount0, v.amount1) = _optimalAmounts(v.desired0, v.desired1, v.min0, v.min1, v.reserve0, v.reserve1);
 
         (v.amountA, v.amountB) = _fromPairOrder(tokenA, v.pairToken0, v.amount0, v.amount1);
 
@@ -95,10 +79,7 @@ contract Router {
         uint256 minA,
         uint256 minB,
         address to
-    )
-        external
-        returns (uint256 amountA, uint256 amountB)
-    {
+    ) external returns (uint256 amountA, uint256 amountB) {
         require(to != address(0), "ROUTER: recipient (to) is zero address");
         require(lpAmount > 0, "ROUTER: LP amount must be > 0");
 
@@ -106,6 +87,7 @@ contract Router {
         require(pair != address(0), "ROUTER: pair does not exist");
 
         IERC20(pair).safeTransferFrom(msg.sender, address(this), lpAmount);
+
         (uint256 amount0, uint256 amount1) = Pair(pair).removeLiquidity(lpAmount);
 
         address pairToken0 = Pair(pair).tokenA();
@@ -123,10 +105,7 @@ contract Router {
         uint256 amountOutMin,
         address[] calldata path,
         address to
-    )
-        external
-        returns (uint256[] memory amounts)
-    {
+    ) external returns (uint256[] memory amounts) {
         require(path.length >= 2, "ROUTER: path length must be >= 2");
         require(to != address(0), "ROUTER: recipient (to) is zero address");
         require(amountIn > 0, "ROUTER: amountIn must be > 0");
@@ -137,26 +116,22 @@ contract Router {
         _pull(path[0], msg.sender, amounts[0]);
 
         for (uint256 i = 0; i < path.length - 1; i++) {
-            address tokenIn = path[i];
-            address tokenOut = path[i + 1];
+            address tokenInHop = path[i];
+            address tokenOutHop = path[i + 1];
 
-            address pair = factory.getPair(tokenIn, tokenOut);
+            address pair = factory.getPair(tokenInHop, tokenOutHop);
             require(pair != address(0), "ROUTER: missing pair for hop");
 
-            _approveIfNeeded(tokenIn, pair, amounts[i]);
+            _approveIfNeeded(tokenInHop, pair, amounts[i]);
 
             address hopRecipient = (i == path.length - 2) ? to : address(this);
-            Pair(pair).swap(tokenIn, amounts[i], 0, hopRecipient);
+            Pair(pair).swap(tokenInHop, amounts[i], 0, hopRecipient);
         }
 
         return amounts;
     }
 
-    function getAmountsOut(uint256 amountIn, address[] memory path)
-        public
-        view
-        returns (uint256[] memory amounts)
-    {
+    function getAmountsOut(uint256 amountIn, address[] memory path) public view returns (uint256[] memory amounts) {
         require(path.length >= 2, "ROUTER: path length must be >= 2");
 
         amounts = new uint256[](path.length);
@@ -174,19 +149,7 @@ contract Router {
         if (pair == address(0)) pair = factory.createPair(tokenA, tokenB);
     }
 
-    function _reservesFor(address pair, address inputToken) internal view returns (uint256 reserveIn, uint256 reserveOut) {
-        (uint112 reserve0, uint112 reserve1) = Pair(pair).getReserves();
-        address pairToken0 = Pair(pair).tokenA();
-        if (inputToken == pairToken0) return (uint256(reserve0), uint256(reserve1));
-        return (uint256(reserve1), uint256(reserve0));
-    }
-
-    function _toPairOrder(
-        address tokenA,
-        address pairToken0,
-        uint256 amountA,
-        uint256 amountB
-    )
+    function _toPairOrder(address tokenA, address pairToken0, uint256 amountA, uint256 amountB)
         internal
         pure
         returns (uint256 amount0, uint256 amount1)
@@ -195,12 +158,7 @@ contract Router {
         return (amountB, amountA);
     }
 
-    function _fromPairOrder(
-        address tokenA,
-        address pairToken0,
-        uint256 amount0,
-        uint256 amount1
-    )
+    function _fromPairOrder(address tokenA, address pairToken0, uint256 amount0, uint256 amount1)
         internal
         pure
         returns (uint256 amountA, uint256 amountB)
@@ -216,12 +174,10 @@ contract Router {
         uint256 min1,
         uint112 reserve0,
         uint112 reserve1
-    )
-        internal
-        pure
-        returns (uint256 amount0, uint256 amount1)
-    {
+    ) internal pure returns (uint256 amount0, uint256 amount1) {
         if (reserve0 == 0 && reserve1 == 0) return (desired0, desired1);
+
+        require(reserve0 > 0 && reserve1 > 0, "ROUTER: bad reserves");
 
         uint256 optimal1 = (desired0 * uint256(reserve1)) / uint256(reserve0);
         if (optimal1 <= desired1) {
