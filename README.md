@@ -42,3 +42,27 @@ anvil --host 127.0.0.1 --port 8545 --chain-id 31337 \
 }
 ```
 
+### Kullanılan Dosyalar
+- `app.js` → ana menü & akış
+- `dex.js` → AMM / Router işlemleri
+- `limit.js` → Limit order işlemleri
+- `chain.js` → RPC, wallet, client setup
+- `deploy.js` → core kontrat deploy
+- `il.js` → Impermanent Loss estimator
+---
+
+### Wallet
+- Cüzdan adresi gösterimi
+- QR code ile adres paylaşımı
+
+### DEX
+- Deploy ERC20 Token
+- Add / Remove Liquidity
+- Quote (swap öncesi fiyat tahmini)
+- Swap
+
+### Limit
+- Create Order
+- Read Order
+- Fill Order
+- Cancel Order
