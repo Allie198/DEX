@@ -31,7 +31,7 @@ anvil --host 127.0.0.1 --port 8545 --chain-id 31337 \
 ---
 
 ## Konfigurasyon 
-```
+```json
 {
   "rpc": "http://127.0.0.1:8545",
   "chainId": 31338,
