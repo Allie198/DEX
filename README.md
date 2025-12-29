@@ -1,13 +1,44 @@
-# Sample Hardhat Project
+# MONATA DEX
+### CLI Tabanlı Hibrit AMM + Limit Order Merkeziyetsiz Borsa
 
-This project demonstrates a basic Hardhat use case. It comes with a sample contract, a test for that contract, and a Hardhat Ignition module that deploys that contract.
+MONATA, Uniswap V2 tarzı **Automated Market Maker (AMM)** mimarisini temel alan,  
+üzerine **Limit Order (CLOB-benzeri)** bir katman eklenmiş **hibrit bir DEX prototipidir**.
 
-Try running some of the following tasks:
+Bu proje, merkeziyetsiz borsaların **nasıl çalıştığını derinlemesine anlamak**,  
+AMM + Order Book yaklaşımlarını **tek bir mimaride denemek** ve  
+bunu **şeffaf, öğretici ve genişletilebilir** bir CLI uygulamasıyla sunmak amacıyla geliştirilmiştir.
 
-```shell
-npx hardhat help
-npx hardhat test
-REPORT_GAS=true npx hardhat test
-npx hardhat node
-npx hardhat ignition deploy ./ignition/modules/Lock.js
+---
+
+## 📌 Temel Hedefler
+
+- AMM (x·y = k) mekanizmasını **sıfırdan uygulamak**
+- Factory / Pair / Router mimarisini **gerçek hayattaki gibi kurmak**
+- AMM üzerine **limit order desteği** ekleyerek hibrit bir model denemek
+- Web UI yerine **CLI** kullanarak protokol mantığını ön plana çıkarmak
+- Impermanent Loss gibi kavramları **uygulamalı olarak göstermek**
+
+---
+
+## Çalıştırma
 ```
+anvil --host 127.0.0.1 --port 8545 --chain-id 31337 \
+  --dump-state anvil-state.json --load-state anvil-state.json
+
+  node cli\app.js 
+
+```
+---
+
+## Konfigurasyon 
+```
+{
+  "rpc": "http://127.0.0.1:8545",
+  "chainId": 31338,
+  "privateKey": "0x..",
+  "factory": "0x..",
+  "router": "0x..",
+  "limit": "0x.."
+}
+```
+
